@@ -112,12 +112,20 @@ def unpack(out_dir, folders):
     """Write the pages of every cisce-pages-*.json (downloaded by saver.js) into out_dir/pages."""
     pages = out_dir / "pages"
     pages.mkdir(parents=True, exist_ok=True)
-    for folder in dict.fromkeys(Path(f) for f in folders):
+    folders = list(dict.fromkeys(Path(f) for f in folders))
+    for folder in folders:
         for bundle in sorted(folder.glob("cisce-pages-*.json")):
-            for name, content in json.loads(bundle.read_text(encoding="utf-8")).items():
+            try:
+                data = json.loads(bundle.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as e:                  # a broken or half-downloaded file: skip it, keep the others
+                print(f"{bundle}: cannot read ({e}), skipped")
+                continue
+            for name, content in data.items():
                 if re.fullmatch(r"page-\d{4}\.html", name):        # the names come from a file: no paths
                     (pages / name).write_text(content, encoding="utf-8")
             print(f"{bundle}: unpacked")
+    if not any(pages.iterdir()):
+        print("No cisce-pages-*.json found in:\n  " + "\n  ".join(map(str, folders)) + "\nRun saver.js in your browser first (README).")
 
 
 def main():
@@ -148,6 +156,6 @@ if __name__ == "__main__":
     if getattr(sys, "frozen", False):            # keep the console window open after a double-click
         try:
             input("\nPress Enter to close ...")
-        except EOFError:
+        except (EOFError, KeyboardInterrupt):
             pass
     sys.exit(code)

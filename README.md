@@ -14,15 +14,17 @@ Instead, `saver.js` runs inside your normal browser tab and reads one page every
 4. Paste with Ctrl+V and press Enter.
    - If the browser does not paste, type `allow pasting`, press Enter, then paste again.
 5. A box asks for the start page. Click OK (page 1).
-6. Wait. Keep the tab open. The console shows `page 12/335: saved`.
+6. Wait. Keep the tab open. A red box at the top right shows `page 12/335 ...`.
+   - To stop: click **Stop** in that box. The tool downloads the pages that it did not download yet.
    - Every 50 pages the browser downloads a file `cisce-pages-0001-0050.json`. Allow "multiple downloads" if the browser asks.
 7. If the Cloudflare check comes back, a box tells you what to do:
    1. Open the page it names in a **new** tab.
    2. Tick the box there and wait for the schools.
-   3. Come back to the first tab and click OK.
+   3. Come back to the first tab and click OK. (Cancel stops the tool.)
 8. At the end a box says `done`. The files are in your Downloads folder.
 
-To continue after a stop: open the site again and paste the script again. The start page box shows the next page.
+To continue after a stop: paste the script again. The start page box shows the next page.
+If one page fails 5 times (the site is down), the tool stops and tells you. Paste it again later.
 
 ## Part 2: make the CSV (optional)
 
