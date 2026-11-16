@@ -61,12 +61,13 @@ def run_saver_js(downloads, delay_ms=0, until="done", click_stop_after_page=None
         page.add_script_tag(content=(HERE.parent / "saver.js").read_text(encoding="utf-8"))
         end = time.time() + 30
         while not any(until in m for m in dialogs) and time.time() < end:
-            if click_stop_after_page and page.evaluate("localStorage.getItem('cisce-saver-next')") == str(click_stop_after_page + 1):
+            if click_stop_after_page and page.evaluate("window.cisceSaver && window.cisceSaver.next") == click_stop_after_page + 1:
                 page.get_by_role("button", name="Stop").click()
                 click_stop_after_page = None
             page.wait_for_timeout(100)
         page.wait_for_timeout(500)
         assert page.locator("text=CISCE saver").count() == 0          # the box is gone at the end
+        run_saver_js.resume = page.evaluate("localStorage.getItem('cisce-saver-next')")
         browser.close()
     srv.shutdown()
     return dialogs
@@ -76,6 +77,7 @@ def test_saver_js_then_csv(tmp_path, monkeypatch):
     downloads = tmp_path / "Downloads"
     dialogs = run_saver_js(downloads)
     assert any("Cloudflare check on page 2" in m for m in dialogs) and any("done" in m for m in dialogs)
+    assert run_saver_js.resume is None   # a finished run leaves no resume page
     assert sorted(f.name for f in downloads.iterdir()) == ["cisce-pages-0001-0001.json", "cisce-pages-0002-0002.json"]
     out = tmp_path / "out"
     monkeypatch.setattr(sys, "argv", ["saver", "--out", str(out), "--in", str(downloads)])
@@ -88,5 +90,7 @@ def test_saver_js_then_csv(tmp_path, monkeypatch):
 def test_saver_js_stop_button(tmp_path):
     downloads = tmp_path / "Downloads"
     dialogs = run_saver_js(downloads, delay_ms=5000, until="stopped", click_stop_after_page=1)
+    resume_page = run_saver_js.resume
     assert any("stopped before page 2" in m for m in dialogs)
     assert sorted(f.name for f in downloads.iterdir()) == ["cisce-pages-0001-0001.json"]
+    assert resume_page == "2"          # the next run starts after the last downloaded page
