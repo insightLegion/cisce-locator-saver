@@ -1,25 +1,19 @@
-"""CISCE locator saver: saves every page of https://locate.cisce.org/ from your own browser, then writes a CSV.
+"""CISCE locator saver, part 2: makes cisce_schools.csv from the pages that saver.js downloaded in your browser.
 
-You pass the Cloudflare check ("Verify you are human") yourself in the browser window. The tool never clicks it. After that it
-opens one page every 6-8 seconds and saves it. If the check comes back, it beeps and waits for you. Run it again to resume.
+Part 1 is saver.js (see README): it runs in your own browser and downloads cisce-pages-NNNN-NNNN.json files.
+Double-click cisce-locator-saver.exe: it reads those files from your Downloads folder and from its own folder, writes the pages
+into cisce-output\\pages and the list into cisce-output\\cisce_schools.csv. Pages saved by hand (Ctrl+S) in that folder count too.
 
-    cisce-locator-saver.exe                 save all pages, then write cisce_schools.csv
-    cisce-locator-saver.exe --parse-only    only write the CSV from the pages already in the folder (also pages saved by hand)
-    options: --out DIR  --delay 6  --browser msedge|chrome|chromium  --max-pages N  --base URL  --headless
+    options: --out DIR  --in DIR (more folders with cisce-pages-*.json)
 """
 import argparse
 import csv
 import html
 import json
-import math
-import random
 import re
 import sys
-import time
 import traceback
 from pathlib import Path
-
-BASE = "https://locate.cisce.org"
 
 # --- parser: the same as crawl.py in github.com/s1d-labs/cisce-scraper (pure, tested) -----------------------------------------
 CARD = re.compile(r'<div class="school-card">(.*?)(?=<div class="school-card">|</tbody>)', re.S)
@@ -114,78 +108,27 @@ def write_csv(out_dir):
     return len(schools)
 
 
-def load(page, url, settle_s=15):
-    """Open url; while the Cloudflare check shows, wait for the person to tick it. Returns the page HTML."""
-    page.goto(url, wait_until="domcontentloaded", timeout=120000)
-    asked, start = False, time.time()
-    while True:
-        try:
-            content = page.content()
-        except Exception:                       # the page navigates by itself after the check
-            time.sleep(1)
-            continue
-        if "school-card" in content or TOTAL.search(content):
-            return content
-        if is_challenge(content):
-            if not asked:
-                print("\a\n>>> Cloudflare check in the browser window: please tick 'Verify you are human'. Waiting ...", flush=True)
-                asked = True
-            time.sleep(2)
-            continue
-        if time.time() - start > settle_s:      # no schools and no check: a page after the last one
-            return content
-        time.sleep(1)
-
-
-def save_all(out_dir, args):
-    from playwright.sync_api import sync_playwright
+def unpack(out_dir, folders):
+    """Write the pages of every cisce-pages-*.json (downloaded by saver.js) into out_dir/pages."""
     pages = out_dir / "pages"
     pages.mkdir(parents=True, exist_ok=True)
-    with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(str(out_dir / "browser-profile"), channel=None if args.browser == "chromium" else args.browser,
-                                                   headless=args.headless, viewport={"width": 1200, "height": 900})
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        n, last = 1, None
-        while args.max_pages is None or n <= args.max_pages:
-            f = pages / f"page-{n:04d}.html"
-            if f.exists():
-                content = f.read_text(encoding="utf-8", errors="replace")
-                print(f"page {n}: already saved")
-            else:
-                content = load(page, f"{args.base}/?page={n}")
-                rows = parse(content)
-                if not rows:
-                    print(f"page {n}: no schools, end of the list")
-                    break
-                f.write_text(content, encoding="utf-8")
-                print(f"page {n}{'/' + str(last) if last else ''}: {len(rows)} schools saved", flush=True)
-                time.sleep(args.delay + random.uniform(0, 2))
-            total = listed_total(content)
-            if total:
-                last = math.ceil(total / 10)
-            if last and n >= last:
-                break
-            n += 1
-        ctx.close()
+    for folder in dict.fromkeys(Path(f) for f in folders):
+        for bundle in sorted(folder.glob("cisce-pages-*.json")):
+            for name, content in json.loads(bundle.read_text(encoding="utf-8")).items():
+                if re.fullmatch(r"page-\d{4}\.html", name):        # the names come from a file: no paths
+                    (pages / name).write_text(content, encoding="utf-8")
+            print(f"{bundle}: unpacked")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     here = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
     ap.add_argument("--out", default=str(here / "cisce-output"))
-    ap.add_argument("--delay", type=float, default=6.0, help="seconds between pages (6 or more)")
-    ap.add_argument("--browser", default="msedge", choices=["msedge", "chrome", "chromium"])
-    ap.add_argument("--max-pages", type=int)
-    ap.add_argument("--base", default=BASE)
-    ap.add_argument("--headless", action="store_true", help="for tests only")
-    ap.add_argument("--parse-only", action="store_true")
+    ap.add_argument("--in", dest="inputs", action="append", default=[], help="folder with cisce-pages-*.json (more than one is OK)")
     args = ap.parse_args()
-    args.delay = max(args.delay, 6.0) if args.base == BASE else args.delay
     out_dir = Path(args.out)
-    out_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output folder: {out_dir}")
-    if not args.parse_only:
-        save_all(out_dir, args)
+    unpack(out_dir, [*args.inputs, here, Path.home() / "Downloads", out_dir])
     write_csv(out_dir)
 
 
@@ -198,7 +141,7 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nStopped. Run the tool again to continue from the last saved page.")
+        print("\nStopped.")
     except Exception:
         traceback.print_exc()
         code = 1
