@@ -26,6 +26,12 @@ jobs:
       - run: pip install pyinstaller pytest playwright==1.65.2
       - name: Tests (saver.js in Microsoft Edge against a local web server; parser; CSV)
         run: python -m pytest tests -q
+      - name: Tests again in Firefox (the README names Chrome and Firefox)
+        run: |
+          python -m playwright install firefox
+          python -m pytest tests -q
+        env:
+          CISCE_TEST_BROWSER: firefox
       - name: Build the .exe
         run: pyinstaller --onefile --name cisce-locator-saver saver.py
       - name: Smoke test of the .exe (one saved page next to it, expects 10 schools)
