@@ -1,6 +1,7 @@
 """Tests: the parser on saved pages, saver.js in a real browser against a local web server (no access to locate.cisce.org),
 and the unpack + CSV step on the files that saver.js downloaded."""
 import csv
+import os
 import http.server
 import sys
 import threading
@@ -57,7 +58,8 @@ def run_saver_js(downloads, delay_ms=0, until="done", click_stop_after_page=None
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     dialogs = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(channel="msedge" if sys.platform == "win32" else None)
+        kind = os.environ.get("CISCE_TEST_BROWSER", "chromium")       # chromium (Edge on Windows) or firefox
+        browser = p.firefox.launch() if kind == "firefox" else p.chromium.launch(channel="msedge" if sys.platform == "win32" else None)
         page = browser.new_page()
         page.on("dialog", lambda d: (dialogs.append(d.message), d.accept("1") if d.type == "prompt" else d.accept()))
         page.on("download", lambda d: d.save_as(downloads / d.suggested_filename))
