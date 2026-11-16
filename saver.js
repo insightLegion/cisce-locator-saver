@@ -6,7 +6,11 @@
 (async () => {
   if (window.cisceSaver) { alert("CISCE saver is already running in this tab. Click Stop in its box first."); return; }
   const DELAY_MS = window.CISCE_DELAY_MS ?? 6000, CHUNK = 50, KEY = "cisce-saver-next";
-  let n = +(prompt("CISCE saver: start at page", localStorage.getItem(KEY) || "1") || 0), last = Infinity, fails = 0, end = "";
+  const store = {   // the next page to fetch, kept in this site's localStorage; private windows can refuse it
+    get: () => { try { return localStorage.getItem(KEY); } catch { return null; } },
+    set: v => { try { v == null ? localStorage.removeItem(KEY) : localStorage.setItem(KEY, v); } catch {} },
+  };
+  let n = +(prompt("CISCE saver: start at page", store.get() || "1") || 0), last = Infinity, fails = 0, end = "";
   if (!n) return;
   const state = window.cisceSaver = { stop: false };
   const box = document.createElement("div");
@@ -18,7 +22,8 @@
   document.body.append(box);
   const show = s => { status.textContent = s; console.log(`CISCE saver: ${s}`); };
   const sleep = async ms => { for (const end = Date.now() + ms; Date.now() < end && !state.stop;) await new Promise(r => setTimeout(r, 200)); };
-  const isChallenge = t => /<title>\s*(Just a moment|Attention Required)/.test(t) || (t.includes("challenge-platform") && !t.includes("school-card"));
+  const hasSchools = t => /school-card|<li><b>[A-Z]{2,4}\d+<\/b><\/li>/.test(t);    // card layout (2026) or table layout (2023-25)
+  const isChallenge = t => /<title>\s*(Just a moment|Attention Required)/.test(t) || (t.includes("challenge-platform") && !hasSchools(t));
   const total = t => +((t.match(/Showing\s+\d+\s+to\s+\d+\s+of\s+(\d+)\s+entries/) || [])[1] || 0);
   let pages = {};
   const download = () => {
@@ -29,6 +34,7 @@
     a.download = `cisce-pages-${names[0].slice(5, 9)}-${names.at(-1).slice(5, 9)}.json`;
     document.body.append(a); a.click(); a.remove();
     pages = {};
+    store.set(+names.at(-1).slice(5, 9) + 1);   // resume after the last page that is in a downloaded file, not before
     console.log(`%cCISCE saver: downloaded ${a.download}`, "color: green");
   };
   try {
@@ -43,18 +49,18 @@
                      `2. Tick "Verify you are human" there and wait for the schools.\n3. Come back here and click OK.\n\nCancel = stop.`)) break;
         continue;
       }
-      if (r.status !== 200 || (!t.includes("school-card") && n < last)) {   // an error in the middle of the list: wait, retry
+      if (r.status !== 200 || (!hasSchools(t) && n < last)) {   // an error in the middle of the list: wait, retry
         if (++fails > 5) { end = `page ${n} failed 5 times (HTTP ${r.status}). Paste the script again later to continue.`; break; }
         show(`page ${n}: HTTP ${r.status || "no answer"}, retry ${fails}/5 in 60 s`);
         await sleep(60000);
         continue;
       }
       fails = 0;
-      if (!t.includes("school-card")) break;   // after the last page
+      if (!hasSchools(t)) break;   // after the last page
       last = Math.ceil(total(t) / 10) || last;
       const name = `page-${String(n).padStart(4, "0")}.html`;
       pages[name] = t;
-      localStorage.setItem(KEY, n + 1);
+      state.next = n + 1;
       if (Object.keys(pages).length >= CHUNK) download();
       if (n++ < last) await sleep(DELAY_MS + Math.random() * 2000);
     }
@@ -63,6 +69,6 @@
     delete window.cisceSaver;
     box.remove();
   }
-  if (!end && n > last) { localStorage.removeItem(KEY); end = "done. Send the cisce-pages-*.json files from your Downloads folder."; }
+  if (!end && n > last) { store.set(null); end = "done. Send the cisce-pages-*.json files from your Downloads folder."; }
   alert(`CISCE saver: ${end || `stopped before page ${n}. Paste the script again to continue from there.`}`);
 })();
