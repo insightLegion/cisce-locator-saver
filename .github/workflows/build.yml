@@ -10,6 +10,10 @@ on:
 permissions:
   contents: write
 
+concurrency:            # two pushes close together must not race on the "latest" release
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
@@ -35,10 +39,10 @@ jobs:
           name: cisce-locator-saver
           path: dist/cisce-locator-saver.exe
       - name: Publish on the "latest" release
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest saver.js dist/cisce-locator-saver.exe run-from-source.bat --title "latest" --notes "Built from ${GITHUB_SHA::7}."
+          gh release create latest saver.js saver.py dist/cisce-locator-saver.exe run-from-source.bat --title "latest" --notes "Built from ${GITHUB_SHA::7}."
