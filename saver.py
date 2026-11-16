@@ -95,9 +95,17 @@ def parse(page):
 def write_csv(out_dir):
     pages = out_dir / "pages"
     schools = {}
+    numbers = set()
     for f in sorted(pages.glob("*.htm*")):
-        for code, d in parse(f.read_text(encoding="utf-8", errors="replace")):
+        try:
+            rows = parse(f.read_text(encoding="utf-8", errors="replace"))
+        except (ValueError, KeyError) as e:                    # one broken page must not stop the CSV
+            print(f"{f.name}: cannot read ({type(e).__name__}), skipped")
+            continue
+        for code, d in rows:
             schools[code] = {**d, "file": f.name}
+        if rows and (m := re.fullmatch(r"page-(\d{4})\.html", f.name)):
+            numbers.add(int(m.group(1)))
     path = out_dir / "cisce_schools.csv"
     with open(path, "w", newline="", encoding="utf-8-sig") as fh:          # utf-8-sig: Excel opens it correctly
         w = csv.DictWriter(fh, fieldnames=FIELDS)
@@ -105,6 +113,10 @@ def write_csv(out_dir):
         w.writerows(schools[c] for c in sorted(schools))
     totals = {d["listed_total"] for d in schools.values() if d["listed_total"]}
     print(f"\n{len(schools)} schools in {path}  (the site says: {', '.join(map(str, sorted(totals))) or 'unknown'})")
+    missing = sorted(set(range(1, max(numbers) + 1)) - numbers) if numbers else []
+    if missing:
+        print(f"Missing pages ({len(missing)}): {', '.join(map(str, missing[:40]))}{' ...' if len(missing) > 40 else ''}"
+              "\nPaste saver.js again and type the first missing page as the start page.")
     return len(schools)
 
 
@@ -112,18 +124,19 @@ def unpack(out_dir, folders):
     """Write the pages of every cisce-pages-*.json (downloaded by saver.js) into out_dir/pages."""
     pages = out_dir / "pages"
     pages.mkdir(parents=True, exist_ok=True)
-    folders = list(dict.fromkeys(Path(f) for f in folders))
-    for folder in folders:
-        for bundle in sorted(folder.glob("cisce-pages-*.json")):
-            try:
-                data = json.loads(bundle.read_text(encoding="utf-8"))
-            except (OSError, ValueError) as e:                  # a broken or half-downloaded file: skip it, keep the others
-                print(f"{bundle}: cannot read ({e}), skipped")
-                continue
-            for name, content in data.items():
-                if re.fullmatch(r"page-\d{4}\.html", name):        # the names come from a file: no paths
-                    (pages / name).write_text(content, encoding="utf-8")
-            print(f"{bundle}: unpacked")
+    folders = list(dict.fromkeys(Path(f).resolve() for f in folders))
+    bundles = {b.resolve() for folder in folders for b in folder.glob("cisce-pages-*.json")}
+    # oldest first, so a newer download of the same pages wins ("... (1).json" sorts before the plain name)
+    for bundle in sorted(bundles, key=lambda f: f.stat().st_mtime):
+        try:
+            data = json.loads(bundle.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:                  # a broken or half-downloaded file: skip it, keep the others
+            print(f"{bundle}: cannot read ({e}), skipped")
+            continue
+        for name, content in data.items():
+            if re.fullmatch(r"page-\d{4}\.html", name):        # the names come from a file: no paths
+                (pages / name).write_text(content, encoding="utf-8")
+        print(f"{bundle}: unpacked")
     if not any(pages.iterdir()):
         print("No cisce-pages-*.json found in:\n  " + "\n  ".join(map(str, folders)) + "\nRun saver.js in your browser first (README).")
 
