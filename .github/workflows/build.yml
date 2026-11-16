@@ -1,6 +1,6 @@
 name: build
 
-# Builds cisce-locator-saver.exe on Windows, tests it, and puts it on the "latest" release (Releases → latest → the .exe).
+# Tests saver.js and saver.py on Windows, builds cisce-locator-saver.exe, and puts saver.js and the .exe on the "latest" release.
 on:
   push:
     branches: [main]
@@ -19,23 +19,17 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt pyinstaller pytest
-      - name: Tests (Microsoft Edge, headless, local web server)
+      - run: pip install pyinstaller pytest playwright==1.65.2
+      - name: Tests (saver.js in Microsoft Edge against a local web server; parser; CSV)
         run: python -m pytest tests -q
       - name: Build the .exe
-        run: pyinstaller --onefile --name cisce-locator-saver --collect-all playwright saver.py
-      - name: Smoke test of the .exe (Edge, local web server, 2 pages)
-        shell: pwsh
+        run: pyinstaller --onefile --name cisce-locator-saver saver.py
+      - name: Smoke test of the .exe (one saved page next to it, expects 10 schools)
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Force site | Out-Null
-          Copy-Item tests/pages/result-isc-india-p1.html site/index.html
-          $srv = Start-Process python -ArgumentList "-m","http.server","8765","--bind","127.0.0.1","--directory","site" -PassThru
-          Start-Sleep 3
-          ./dist/cisce-locator-saver.exe --headless --base http://127.0.0.1:8765 --delay 0 --max-pages 2 --out smoke
-          Stop-Process $srv.Id
-          if (-not (Test-Path smoke/cisce_schools.csv)) { throw "no CSV" }
-          $n = (Import-Csv smoke/cisce_schools.csv).Count
-          if ($n -ne 10) { throw "expected 10 schools, got $n" }
+          python -c 'import json; json.dump({"page-0001.html": open("tests/pages/result-isc-india-p1.html", encoding="utf-8").read()}, open("dist/cisce-pages-0001-0001.json", "w", encoding="utf-8"))'
+          ./dist/cisce-locator-saver.exe --out smoke < /dev/null
+          python -c 'import csv; n = len(list(csv.DictReader(open("smoke/cisce_schools.csv", encoding="utf-8-sig")))); assert n == 10, n; print(n, "schools")'
       - uses: actions/upload-artifact@v6
         with:
           name: cisce-locator-saver
@@ -47,4 +41,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest dist/cisce-locator-saver.exe run-from-source.bat --title "latest" --notes "Built from ${GITHUB_SHA::7}."
+          gh release create latest saver.js dist/cisce-locator-saver.exe run-from-source.bat --title "latest" --notes "Built from ${GITHUB_SHA::7}."
