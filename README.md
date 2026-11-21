@@ -1,5 +1,8 @@
 # cisce-locator-saver
 
+> Newer: [insightLegion/local-scrape-kit](https://github.com/insightLegion/local-scrape-kit) does the same with more hard stops
+> (429/403 stops, page, time and daily caps) and also saves lists of pages and PDFs. Its locator files are compatible.
+
 Saves the full list of CISCE affiliated schools from https://locate.cisce.org/ with your own browser, then makes a CSV.
 
 The site shows a Cloudflare check ("Verify you are human"). You tick it yourself. The tool does not click it.
